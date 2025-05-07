@@ -1,11 +1,15 @@
 <?php
-// TODO: Add session start if using sessions for admin auth
-// session_start();
+// 初始化会话并设置安全参数
+session_start([
+    'cookie_secure' => true,
+    'cookie_httponly' => true,
+    'use_strict_mode' => true
+]);
 
 // --- Configuration ---
 $upload_dir = __DIR__ . '/uploads/'; // Directory to store uploaded files
 $data_file = __DIR__ . '/shares.json'; // File to store share metadata
-$admin_password_correct = 'YOUR_ADMIN_UPLOAD_PASSWORD'; // MUST MATCH the one in share_page.php
+$admin_password_correct = '00000000'; // MUST MATCH the one in share_page.php
 
 // --- Helper Functions ---
 
@@ -24,7 +28,11 @@ function redirect_with_message($message, $status = 'error') {
  * @return string A unique ID.
  */
 function generate_share_id() {
-    return bin2hex(random_bytes(8)); // Generates a 16-character hex ID
+    $share_data = load_share_data();
+    do {
+        $id = strval(random_int(1000, 9999));
+    } while (isset($share_data[$id]));
+    return $id;
 }
 
 /**
@@ -80,9 +88,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // 1. Verify Admin Authentication (Simple Token Check)
         // A more robust method (like sessions) is recommended for production
-        $provided_token = $_POST['admin_auth_token'] ?? '';
-        if (!password_verify($admin_password_correct, $provided_token)) {
-        // if (!isset($_SESSION['isAdminAuthenticated']) || !$_SESSION['isAdminAuthenticated']) { // Session-based check
+        // $provided_token = $_POST['admin_auth_token'] ?? '';
+        // if (!password_verify($admin_password_correct, $provided_token)) {
+        if (!isset($_SESSION['isAdminAuthenticated']) || !$_SESSION['isAdminAuthenticated']) { // Session-based check
             redirect_with_message('Admin authentication failed or expired.');
         }
 
@@ -121,7 +129,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($file_info['size'] === 0) {
                  redirect_with_message('Uploaded file is empty.');
             }
-            // TODO: Add more robust validation (file type, size limit)
+            // 文件类型和大小验证
+$allowed_types = ['image/jpeg', 'image/png', 'application/pdf', 'text/plain'];
+$max_size = 10 * 1024 * 1024; // 10MB
+
+if (!in_array($file_info['type'], $allowed_types)) {
+    redirect_with_message('不允许的文件类型，仅支持: jpg, png, pdf, txt');
+}
+if ($file_info['size'] > $max_size) {
+    redirect_with_message('文件大小超过10MB限制');
+}
 
             $original_filename = basename($file_info['name']);
             $safe_filename = $share_id . '_' . preg_replace('/[^A-Za-z0-9_\-\.]/', '_', $original_filename);
@@ -173,9 +190,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Password correct, provide content
         if ($share_info['type'] === 'text') {
-            // Display text directly (consider escaping if displaying in HTML context elsewhere)
-            header('Content-Type: text/plain; charset=utf-8');
-            echo $share_info['text'];
+            // 将文本内容通过重定向参数返回到 share_page.php
+            $text = urlencode($share_info['text']);
+            header('Location: share_page.php?text_content=' . $text . '&status=success');
             exit;
         } elseif ($share_info['type'] === 'file') {
             $filepath = $share_info['filepath'];
@@ -199,6 +216,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect_with_message('Error: Unknown share type.');
         }
 
+    } else if ($action === 'delete') {
+        // --- Delete Logic ---
+        $share_id = $_POST['share_id'] ?? null;
+        if (empty($share_id)) {
+            redirect_with_message('缺少任务ID，无法删除。');
+        }
+        $share_data = load_share_data();
+        if (!isset($share_data[$share_id])) {
+            redirect_with_message('任务不存在或已被删除。');
+        }
+        // 如果是文件类型，尝试删除文件
+        if (isset($share_data[$share_id]['type']) && $share_data[$share_id]['type'] === 'file') {
+            $filepath = $share_data[$share_id]['filepath'] ?? null;
+            if ($filepath && file_exists($filepath)) {
+                @unlink($filepath);
+            }
+        }
+        unset($share_data[$share_id]);
+        if (save_share_data($share_data)) {
+            redirect_with_message('任务已成功删除！', 'success');
+        } else {
+            redirect_with_message('删除失败，数据保存异常。');
+        }
     } else {
         redirect_with_message('Invalid action specified.');
     }

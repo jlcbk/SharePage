@@ -1,21 +1,24 @@
 <?php
-// TODO: Add session start and potentially WordPress integration if needed
-// session_start(); 
+// 初始化会话并设置安全参数
+session_start([
+    'cookie_secure' => true,
+    'cookie_httponly' => true,
+    'use_strict_mode' => true
+]); 
 
 // Placeholder for admin upload password check - replace with actual check
 $isAdminAuthenticated = false; // Assume not authenticated initially
-$admin_password_correct = 'YOUR_ADMIN_UPLOAD_PASSWORD'; // Replace with your desired admin password
+$admin_password_correct = '00000000'; // Replace with your desired admin password
+$session_timeout = 1800; // 30分钟
 
 if (isset($_POST['admin_password'])) {
     if ($_POST['admin_password'] === $admin_password_correct) {
         $isAdminAuthenticated = true;
-        // Set a session or cookie to remember authentication if desired
-        // $_SESSION['isAdminAuthenticated'] = true;
+        $_SESSION['isAdminAuthenticated'] = true;
     }
+} else if (isset($_SESSION['isAdminAuthenticated']) && $_SESSION['isAdminAuthenticated']) {
+    $isAdminAuthenticated = true;
 }
-// else if (isset($_SESSION['isAdminAuthenticated']) && $_SESSION['isAdminAuthenticated']) {
-//    $isAdminAuthenticated = true;
-// }
 
 ?>
 <!DOCTYPE html>
@@ -58,6 +61,47 @@ if (isset($_POST['admin_password'])) {
         .message.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .message.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         .form-group { margin-bottom: 15px; }
+        /* 新增：任务列表小按钮样式 */
+        .task-list-btn {
+            background: none;
+            border: none;
+            color: #0073aa;
+            padding: 0;
+            font-size: 13px;
+            cursor: pointer;
+            text-decoration: underline;
+            display: inline-block;
+            margin-left: 4px;
+            margin-right: 0;
+            line-height: 1.5;
+            vertical-align: baseline;
+            box-shadow: none;
+            width: auto;
+        }
+        .task-list-btn:hover {
+            color: #005a87;
+            text-decoration: underline;
+            background: none;
+        }
+        .task-list-inline {
+            display: inline-block;
+            white-space: nowrap;
+            line-height: 1.5;
+            vertical-align: baseline;
+        }
+        .task-list-inline strong,
+        .task-list-inline span {
+            margin-right: 4px;
+        }
+        .task-list-inline form {
+            display: inline;
+            margin: 0;
+        }
+        .task-list-inline li,
+        .task-list-inline div {
+            background: none !important;
+            box-shadow: none !important;
+        }
     </style>
 </head>
 <body>
@@ -107,7 +151,45 @@ if (isset($_POST['admin_password'])) {
                 <button type="submit">上传</button>
             </form>
         </div>
-        <?php endif; ?>
+        <!-- 新增：显示所有已上传任务 -->
+        <div class="section" id="task-list-section">
+            <h2>已上传任务列表</h2>
+            <ul>
+            <?php
+            $data_file = __DIR__ . '/shares.json';
+            if (file_exists($data_file)) {
+                $json = file_get_contents($data_file);
+                $shares = json_decode($json, true);
+                if (is_array($shares) && count($shares) > 0) {
+                    foreach ($shares as $share_id => $share) {
+                        $desc = '';
+                        if ($share['type'] === 'file') {
+                            $desc = $share['filename'] ? $share['filename'] : '未知文件';
+                        } elseif ($share['type'] === 'text') {
+                            $desc = isset($share['text']) ? mb_substr($share['text'], 0, 10, 'UTF-8') : '无内容';
+                        } else {
+                            $desc = '未知类型';
+                        }
+                        echo "<li><div class=\"task-list-inline\"><strong>任务号:</strong> {$share_id} &nbsp; <strong>内容:</strong> " . htmlspecialchars($desc);
+                        // 复制按钮
+                        $copyValue = $share['type'] === 'file' ? ($share['filename'] ? $share['filename'] : '未知文件') : (isset($share['text']) ? $share['text'] : '无内容');
+                        echo '<button type="button" class="copy-btn task-list-btn" data-copy="' . htmlspecialchars($copyValue) . '">复制</button>';
+                        echo '<form action="share_handler.php?action=delete" method="post" style="display:inline;margin:0;">
+                            <input type="hidden" name="share_id" value="' . htmlspecialchars($share_id) . '">
+                            <button type="submit" class="task-list-btn" onclick=\"return confirm(\'确定要删除该任务吗？\');\">删除</button>';
+                        echo '</form>';
+                        echo '</div></li>';
+                    }
+                } else {
+                    echo "<li>暂无任务</li>";
+                }
+            } else {
+                echo "<li>暂无任务</li>";
+            }
+            ?>
+            </ul>
+        </div>
+<?php endif; ?>
 
         <div class="section" id="download-section">
             <h2>下载内容</h2>
@@ -130,6 +212,11 @@ if (isset($_POST['admin_password'])) {
             $message = htmlspecialchars($_GET['message']);
             $status = isset($_GET['status']) ? $_GET['status'] : 'info'; // info, success, error
             echo "<div class='message {$status}'>{$message}</div>";
+        }
+        // 新增：如果有文本内容参数，则显示文本内容
+        if (isset($_GET['text_content'])) {
+            $text_content = htmlspecialchars(urldecode($_GET['text_content']));
+            echo "<div class='message success'><strong>分享文本内容：</strong><br><pre style='white-space:pre-wrap;word-break:break-all;'>" . $text_content . "</pre></div>";
         }
         ?>
 
@@ -157,6 +244,31 @@ if (isset($_POST['admin_password'])) {
         }
         // Initial call to set the correct fields based on default selection
         document.addEventListener('DOMContentLoaded', toggleUploadFields);
+
+        // 复制按钮功能
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.copy-btn').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    const val = btn.getAttribute('data-copy');
+                    if (navigator.clipboard) {
+                        navigator.clipboard.writeText(val).then(function() {
+                            btn.textContent = '已复制';
+                            setTimeout(function(){ btn.textContent = '复制'; }, 1000);
+                        });
+                    } else {
+                        // 兼容旧浏览器
+                        const textarea = document.createElement('textarea');
+                        textarea.value = val;
+                        document.body.appendChild(textarea);
+                        textarea.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(textarea);
+                        btn.textContent = '已复制';
+                        setTimeout(function(){ btn.textContent = '复制'; }, 1000);
+                    }
+                });
+            });
+        });
     </script>
 
 </body>

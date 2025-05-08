@@ -1,7 +1,6 @@
 <?php
 // 初始化会话并设置安全参数
 session_start([
-    'cookie_secure' => true,
     'cookie_httponly' => true,
     'use_strict_mode' => true
 ]);
@@ -91,6 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // $provided_token = $_POST['admin_auth_token'] ?? '';
         // if (!password_verify($admin_password_correct, $provided_token)) {
         if (!isset($_SESSION['isAdminAuthenticated']) || !$_SESSION['isAdminAuthenticated']) { // Session-based check
+            error_log('SESSION DEBUG: ' . print_r($_SESSION, true));
             redirect_with_message('Admin authentication failed or expired.');
         }
 

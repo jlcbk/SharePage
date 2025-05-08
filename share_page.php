@@ -164,7 +164,12 @@ if (isset($_POST['admin_password'])) {
                     foreach ($shares as $share_id => $share) {
                         $desc = '';
                         if ($share['type'] === 'file') {
-                            $desc = $share['filename'] ? $share['filename'] : '未知文件';
+                            $original_filename = $share['filename'] ? $share['filename'] : '未知文件';
+                            if (mb_strlen($original_filename, 'UTF-8') > 15) {
+                                $desc = mb_substr($original_filename, 0, 15, 'UTF-8');
+                            } else {
+                                $desc = $original_filename;
+                            }
                         } elseif ($share['type'] === 'text') {
                             $desc = isset($share['text']) ? mb_substr($share['text'], 0, 10, 'UTF-8') : '无内容';
                         } else {

@@ -100,12 +100,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $text_content = $_POST['text_content'] ?? null;
         $file_info = $_FILES['file_content'] ?? null;
 
-        if (empty($download_password)) {
-            redirect_with_message('Download password is required.');
-        }
+        // 允许下载密码为空
+        // if (empty($download_password)) {
+        //     redirect_with_message('Download password is required.');
+        // }
 
         $share_id = generate_share_id();
-        $hashed_password = password_hash($download_password, PASSWORD_DEFAULT);
+        $hashed_password = password_hash($download_password ?? '', PASSWORD_DEFAULT);
         $share_data = load_share_data();
         $new_share = [
             'type' => $upload_type,
@@ -172,8 +173,8 @@ if ($file_info['size'] > $max_size) {
         $share_id = $_POST['share_id'] ?? null;
         $access_password = $_POST['access_password'] ?? null;
 
-        if (empty($share_id) || empty($access_password)) {
-            redirect_with_message('Share ID and download password are required.');
+        if (empty($share_id)) {
+            redirect_with_message('Share ID is required.');
         }
 
         $share_data = load_share_data();
@@ -183,12 +184,18 @@ if ($file_info['size'] > $max_size) {
         }
 
         $share_info = $share_data[$share_id];
-
-        if (!password_verify($access_password, $share_info['password_hash'])) {
-            redirect_with_message('Incorrect download password.');
+        // 如果分享设置的密码为空，则无需校验密码
+        if (!empty($share_info['password_hash']) && !empty($access_password)) {
+            if (!password_verify($access_password, $share_info['password_hash'])) {
+                redirect_with_message('Incorrect download password.');
+            }
+        } elseif (!empty($share_info['password_hash']) && empty($access_password)) {
+            // 设置了密码但未输入
+            redirect_with_message('Download password is required.');
         }
+        // 未设置密码则直接允许下载
 
-        // Password correct, provide content
+        // Password correct or no password, provide content
         if ($share_info['type'] === 'text') {
             // 将文本内容通过重定向参数返回到 share_page.php
             $text = urlencode($share_info['text']);

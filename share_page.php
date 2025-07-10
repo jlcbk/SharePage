@@ -145,8 +145,8 @@ if (isset($_POST['admin_password'])) {
                     <input type="file" id="file_content" name="file_content">
                 </div>
                 <div class="form-group">
-                    <label for="download_password">设置下载密码:</label>
-                    <input type="password" id="download_password" name="download_password" required>
+                    <label for="download_password">设置下载密码 (可选):</label>
+                    <input type="password" id="download_password" name="download_password">
                 </div>
                 <button type="submit">上传</button>
             </form>
@@ -204,8 +204,8 @@ if (isset($_POST['admin_password'])) {
                     <input type="text" id="share_id" name="share_id" required>
                 </div>
                 <div class="form-group">
-                    <label for="access_password">下载密码:</label>
-                    <input type="password" id="access_password" name="access_password" required>
+                    <label for="access_password">下载密码 (如果需要):</label>
+                    <input type="password" id="access_password" name="access_password">
                 </div>
                 <button type="submit">获取内容</button>
             </form>

@@ -106,11 +106,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // }
 
         $share_id = generate_share_id();
-        $hashed_password = password_hash($download_password ?? '', PASSWORD_DEFAULT);
+        $hashed_password = !empty($download_password) ? password_hash($download_password, PASSWORD_DEFAULT) : null;
         $share_data = load_share_data();
         $new_share = [
             'type' => $upload_type,
-            'password_hash' => $hashed_password,
+            'password_hash' => $hashed_password, // Can be null
             'timestamp' => time(),
             'filename' => null, // Original filename
             'filepath' => null, // Path on server for files
@@ -131,15 +131,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  redirect_with_message('Uploaded file is empty.');
             }
             // 文件类型和大小验证
-$allowed_types = ['image/jpeg', 'image/png', 'application/pdf', 'text/plain'];
-$max_size = 10 * 1024 * 1024; // 10MB
+            $allowed_types = [
+                // 镜像
+                'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml', 'image/bmp',
+                // 文档
+                'application/pdf', 'text/plain', 'text/csv', 'text/html',
+                'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .doc, .docx
+                'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xls, .xlsx
+                'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .ppt, .pptx
+                // 压缩文件
+                'application/zip', 'application/x-rar-compressed', 'application/x-7z-compressed',
+                // 音视频
+                'audio/mpeg', 'audio/wav', 'video/mp4', 'video/webm'
+            ];
+            $max_size = 100 * 1024 * 1024; // 100MB
 
-if (!in_array($file_info['type'], $allowed_types)) {
-    redirect_with_message('不允许的文件类型，仅支持: jpg, png, pdf, txt');
-}
-if ($file_info['size'] > $max_size) {
-    redirect_with_message('文件大小超过10MB限制');
-}
+            // 简单的 MIME 类型检查
+            if (!in_array($file_info['type'], $allowed_types)) {
+                // 如果类型不在列表中，进行扩展名检查作为备用
+                $allowed_extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'pdf', 'txt', 'csv', 'html', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'zip', 'rar', '7z', 'mp3', 'wav', 'mp4', 'webm'];
+                $file_extension = strtolower(pathinfo($file_info['name'], PATHINFO_EXTENSION));
+                if (!in_array($file_extension, $allowed_extensions)) {
+                    redirect_with_message('不被允许的文件类型。');
+                }
+            }
+
+            if ($file_info['size'] > $max_size) {
+                redirect_with_message('文件大小超过 100MB 限制。');
+            }
 
             $original_filename = basename($file_info['name']);
             $safe_filename = $share_id . '_' . preg_replace('/[^A-Za-z0-9_\-\.]/', '_', $original_filename);
@@ -184,16 +203,21 @@ if ($file_info['size'] > $max_size) {
         }
 
         $share_info = $share_data[$share_id];
-        // 如果分享设置的密码为空，则无需校验密码
-        if (!empty($share_info['password_hash']) && !empty($access_password)) {
-            if (!password_verify($access_password, $share_info['password_hash'])) {
-                redirect_with_message('Incorrect download password.');
+
+        // --- Password Verification Logic ---
+        $is_password_protected = !empty($share_info['password_hash']);
+
+        if ($is_password_protected) {
+            // Share is password protected, so a password is required
+            if (empty($access_password)) {
+                redirect_with_message('此分享受密码保护，请输入下载密码。');
             }
-        } elseif (!empty($share_info['password_hash']) && empty($access_password)) {
-            // 设置了密码但未输入
-            redirect_with_message('Download password is required.');
+            // Verify the provided password
+            if (!password_verify($access_password, $share_info['password_hash'])) {
+                redirect_with_message('下载密码错误。');
+            }
         }
-        // 未设置密码则直接允许下载
+        // If not password protected, or if the correct password was provided, proceed to download.
 
         // Password correct or no password, provide content
         if ($share_info['type'] === 'text') {

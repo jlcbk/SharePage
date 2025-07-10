@@ -1,15 +1,3 @@
-# Directory for user uploads
-/uploads/
 
-# JSON file containing share metadata (optional, depends on sensitivity)
-# /shares.json
-
-# IDE/Editor specific files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS specific files
-.DS_Store
-Thumbs.db
+# Ignore old files directory
+old/

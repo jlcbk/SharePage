@@ -104,6 +104,19 @@ if (isset($_POST['admin_password'])) {
             background: none !important;
             box-shadow: none !important;
         }
+        /* 确保任务列表项垂直排列 */
+        #task-list-section ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        #task-list-section ul li {
+            display: block;
+            margin-bottom: 10px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
     </style>
 </head>
 <body>
@@ -183,30 +196,30 @@ if (isset($_POST['admin_password'])) {
                             $desc = '未知类型';
                         }
                         
-                        echo "<li><div class="task-list-inline"><strong>任务号:</strong> {$share_id} &nbsp; <strong>内容:</strong> " . htmlspecialchars($desc);
+                        echo '<li><div class="task-list-inline"><strong>任务号:</strong> ' . $share_id . ' &nbsp; <strong>内容:</strong> ' . htmlspecialchars($desc);
 
                         // --- DYNAMIC BUTTONS ---
                         if ($share['type'] === 'file') {
-                            // FILE: Show a mini download form
-                            echo '<form action="share_handler.php?action=download" method="post" class="task-list-inline-form">';
-                            echo '<input type="hidden" name="share_id" value="' . htmlspecialchars($share_id) . '">';
-                            if (!empty($share['password_hash'])) {
-                                echo '<input type="password" name="access_password" placeholder="密码" class="task-list-pwd">';
-                            }
-                            echo '<button type="submit" class="task-list-btn">下载</button>';
-                            echo '</form>';
+                            // FILE: Show download button
+                            $hasPassword = isset($share['password_hash']) && $share['password_hash'] !== '' && $share['password_hash'] !== null;
+                            echo '<button type="button" class="task-list-btn download-btn"
+                                    data-share-id="' . htmlspecialchars($share_id) . '"
+                                    data-has-password="' . ($hasPassword ? 'true' : 'false') . '">下载</button>';
                         } else {
                             // TEXT: Show copy button
-                            $copyValue = isset($share['text']) ? $share['text'] : '';
-                            echo '<button type="button" class="copy-btn task-list-btn" data-copy="' . htmlspecialchars($copyValue) . '">复制</button>';
+                            $hasPassword = isset($share['password_hash']) && $share['password_hash'] !== '' && $share['password_hash'] !== null;
+                            $copyValue = $hasPassword ? '' : (isset($share['text']) ? $share['text'] : '');
+                            echo '<button type="button" class="copy-btn task-list-btn"
+                                    data-copy="' . htmlspecialchars($copyValue) . '"
+                                    data-share-id="' . htmlspecialchars($share_id) . '"
+                                    data-has-password="' . ($hasPassword ? 'true' : 'false') . '">复制</button>';
                         }
 
                         // DELETE button is always present
                         echo '<form action="share_handler.php?action=delete" method="post" class="task-list-inline-form">
                             <input type="hidden" name="share_id" value="' . htmlspecialchars($share_id) . '">
-                            <button type="submit" class="task-list-btn" onclick="return confirm('确定要删除该任务吗？');">删除</button>';
-                        echo '</form>';
-                        echo '</div></li>';
+                            <button type="submit" class="task-list-btn" onclick="return confirm(\'确定要删除该任务吗？\');">删除</button>';
+                        echo '</form></div></li>';
                     }
                 } else {
                     echo "<li>暂无任务</li>";
@@ -238,28 +251,111 @@ if (isset($_POST['admin_password'])) {
     <script>
         // 复制按钮功能
         document.addEventListener('DOMContentLoaded', function() {
+            // 处理复制按钮
             document.querySelectorAll('.copy-btn').forEach(function(btn) {
                 btn.addEventListener('click', function() {
-                    const val = btn.getAttribute('data-copy');
-                    if (navigator.clipboard) {
-                        navigator.clipboard.writeText(val).then(function() {
-                            btn.textContent = '已复制';
-                            setTimeout(function(){ btn.textContent = '复制'; }, 1000);
+                    const hasPassword = btn.getAttribute('data-has-password') === 'true';
+                    const shareId = btn.getAttribute('data-share-id');
+
+                    if (hasPassword) {
+                        const password = prompt('请输入访问密码:');
+                        if (password === null) return; // 用户取消
+
+                        // 验证密码并获取内容
+                        fetch('share_handler.php?action=get_text', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                            },
+                            body: 'share_id=' + encodeURIComponent(shareId) + '&access_password=' + encodeURIComponent(password)
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                copyToClipboard(data.content, btn);
+                            } else {
+                                alert('密码错误或获取失败');
+                            }
+                        })
+                        .catch(error => {
+                            alert('操作失败');
                         });
                     } else {
-                        // 兼容旧浏览器
-                        const textarea = document.createElement('textarea');
-                        textarea.value = val;
-                        document.body.appendChild(textarea);
-                        textarea.select();
-                        document.execCommand('copy');
-                        document.body.removeChild(textarea);
-                        btn.textContent = '已复制';
-                        setTimeout(function(){ btn.textContent = '复制'; }, 1000);
+                        const val = btn.getAttribute('data-copy');
+                        copyToClipboard(val, btn);
+                    }
+                });
+            });
+
+            // 处理下载按钮
+            document.querySelectorAll('.download-btn').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    const hasPassword = btn.getAttribute('data-has-password') === 'true';
+                    const shareId = btn.getAttribute('data-share-id');
+
+                    if (hasPassword) {
+                        const password = prompt('请输入访问密码:');
+                        if (password === null) return; // 用户取消
+
+                        // 创建隐藏表单提交下载请求
+                        const form = document.createElement('form');
+                        form.method = 'POST';
+                        form.action = 'share_handler.php?action=download';
+
+                        const shareIdInput = document.createElement('input');
+                        shareIdInput.type = 'hidden';
+                        shareIdInput.name = 'share_id';
+                        shareIdInput.value = shareId;
+
+                        const passwordInput = document.createElement('input');
+                        passwordInput.type = 'hidden';
+                        passwordInput.name = 'access_password';
+                        passwordInput.value = password;
+
+                        form.appendChild(shareIdInput);
+                        form.appendChild(passwordInput);
+                        document.body.appendChild(form);
+                        form.submit();
+                        document.body.removeChild(form);
+                    } else {
+                        // 无密码直接下载
+                        const form = document.createElement('form');
+                        form.method = 'POST';
+                        form.action = 'share_handler.php?action=download';
+
+                        const shareIdInput = document.createElement('input');
+                        shareIdInput.type = 'hidden';
+                        shareIdInput.name = 'share_id';
+                        shareIdInput.value = shareId;
+
+                        form.appendChild(shareIdInput);
+                        document.body.appendChild(form);
+                        form.submit();
+                        document.body.removeChild(form);
                     }
                 });
             });
         });
+
+        // 复制到剪贴板的辅助函数
+        function copyToClipboard(text, btn) {
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(text).then(function() {
+                    btn.textContent = '已复制';
+                    setTimeout(function(){ btn.textContent = '复制'; }, 1000);
+                });
+            } else {
+                // 兼容旧浏览器
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                btn.textContent = '已复制';
+                setTimeout(function(){ btn.textContent = '复制'; }, 1000);
+            }
+        }
     </script>
 
 </body>

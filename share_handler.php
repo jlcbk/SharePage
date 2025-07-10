@@ -213,7 +213,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $share_info = $share_data[$share_id];
 
         // --- Password Verification Logic ---
-        $is_password_protected = !empty($share_info['password_hash']);
+        $is_password_protected = isset($share_info['password_hash']) && $share_info['password_hash'] !== '' && $share_info['password_hash'] !== null;
 
         if ($is_password_protected) {
             // Share is password protected, so a password is required
@@ -278,6 +278,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             redirect_with_message('删除失败，数据保存异常。');
         }
+    } elseif ($action === 'get_text') {
+        // --- Get Text Content Logic ---
+        $share_id = $_POST['share_id'] ?? null;
+        $access_password = $_POST['access_password'] ?? null;
+
+        if (empty($share_id)) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => '缺少任务ID']);
+            exit;
+        }
+
+        $share_data = load_share_data();
+        if (!isset($share_data[$share_id])) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => '任务不存在']);
+            exit;
+        }
+
+        $share = $share_data[$share_id];
+
+        // Check if this is a text share
+        if ($share['type'] !== 'text') {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => '不是文本类型']);
+            exit;
+        }
+
+        // Check password if required
+        $hasPassword = isset($share['password_hash']) && $share['password_hash'] !== '' && $share['password_hash'] !== null;
+        if ($hasPassword) {
+            if (empty($access_password) || !password_verify($access_password, $share['password_hash'])) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => '密码错误']);
+                exit;
+            }
+        }
+
+        // Return the text content
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'content' => $share['text'] ?? '']);
+        exit;
     } else {
         redirect_with_message('Invalid action specified.');
     }

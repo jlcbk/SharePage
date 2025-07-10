@@ -13,8 +13,10 @@ $session_timeout = 1800; // 30分钟
 
 if (isset($_POST['admin_password'])) {
     if ($_POST['admin_password'] === $admin_password_correct) {
-        $isAdminAuthenticated = true;
         $_SESSION['isAdminAuthenticated'] = true;
+        // PRG Pattern: Redirect after successful POST to prevent race conditions and form resubmission.
+        header('Location: share_page.php?login=success');
+        exit;
     }
 } else if (isset($_SESSION['isAdminAuthenticated']) && $_SESSION['isAdminAuthenticated']) {
     $isAdminAuthenticated = true;

@@ -95,15 +95,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         // 2. Get Upload Data
-        $upload_type = $_POST['upload_type'] ?? 'text';
         $download_password = $_POST['download_password'] ?? null;
         $text_content = $_POST['text_content'] ?? null;
         $file_info = $_FILES['file_content'] ?? null;
+        $upload_type = ''; // Determine this based on input
 
-        // 允许下载密码为空
-        // if (empty($download_password)) {
-        //     redirect_with_message('Download password is required.');
-        // }
+        // Determine upload type: file has priority
+        if ($file_info && $file_info['error'] === UPLOAD_ERR_OK) {
+            if ($file_info['size'] > 0) {
+                $upload_type = 'file';
+            } else {
+                redirect_with_message('上传的文件不能为空。');
+            }
+        } elseif (!empty(trim($text_content))) {
+            $upload_type = 'text';
+        } else {
+            redirect_with_message('必须提供文本内容或上传一个文件。');
+        }
 
         $share_id = generate_share_id();
         $hashed_password = !empty($download_password) ? password_hash($download_password, PASSWORD_DEFAULT) : null;

@@ -110,6 +110,20 @@ if (isset($_POST['admin_password'])) {
     <div class="container">
         <h1>安全分享</h1>
 
+        <!-- Display messages from handler -->
+        <?php 
+        if (isset($_GET['message'])) {
+            $message = htmlspecialchars($_GET['message']);
+            $status = isset($_GET['status']) ? $_GET['status'] : 'info'; // info, success, error
+            echo "<div class='message {$status}'>{$message}</div>";
+        }
+        // 新增：如果有文本内容参数，则显示文本内容
+        if (isset($_GET['text_content'])) {
+            $text_content = htmlspecialchars(urldecode($_GET['text_content']));
+            echo "<div class='message success'><strong>分享文本内容：</strong><br><pre style='white-space:pre-wrap;word-break:break-all;'>" . $text_content . "</pre></div>";
+        }
+        ?>
+
         <?php if (!$isAdminAuthenticated): ?>
         <div class="section" id="admin-login">
             <h2>管理员上传认证</h2>
@@ -129,26 +143,21 @@ if (isset($_POST['admin_password'])) {
         <?php if ($isAdminAuthenticated): ?>
         <div class="section" id="upload-section">
             <h2>上传内容</h2>
+            <p style="font-size: 14px; color: #666;">您可以直接粘贴文本或选择文件进行上传。如果两者都提供，将优先上传文件。</p>
             <form action="share_handler.php?action=upload" method="post" enctype="multipart/form-data">
                 <input type="hidden" name="admin_auth_token" value="<?php echo htmlspecialchars(password_hash($admin_password_correct, PASSWORD_DEFAULT)); // Simple token example ?>">
-                <div class="form-group">
-                    <label for="upload_type">上传类型:</label>
-                    <select id="upload_type" name="upload_type" onchange="toggleUploadFields()">
-                        <option value="text">文本</option>
-                        <option value="file">文件</option>
-                    </select>
-                </div>
+                
                 <div class="form-group" id="text_content_group">
                     <label for="text_content">文本内容:</label>
-                    <textarea id="text_content" name="text_content"></textarea>
+                    <textarea id="text_content" name="text_content" placeholder="在此处粘贴文本..."></textarea>
                 </div>
-                <div class="form-group" id="file_content_group" style="display: none;">
+                <div class="form-group" id="file_content_group">
                     <label for="file_content">选择文件:</label>
                     <input type="file" id="file_content" name="file_content">
                 </div>
                 <div class="form-group">
                     <label for="download_password">设置下载密码 (可选):</label>
-                    <input type="password" id="download_password" name="download_password">
+                    <input type="password" id="download_password" name="download_password" placeholder="留空则无需密码">
                 </div>
                 <button type="submit">上传</button>
             </form>
@@ -163,27 +172,39 @@ if (isset($_POST['admin_password'])) {
                 $json = file_get_contents($data_file);
                 $shares = json_decode($json, true);
                 if (is_array($shares) && count($shares) > 0) {
-                    foreach ($shares as $share_id => $share) {
+                    foreach (array_reverse($shares, true) as $share_id => $share) { // Reverse to show newest first
                         $desc = '';
                         if ($share['type'] === 'file') {
                             $original_filename = $share['filename'] ? $share['filename'] : '未知文件';
-                            if (mb_strlen($original_filename, 'UTF-8') > 15) {
-                                $desc = mb_substr($original_filename, 0, 15, 'UTF-8');
-                            } else {
-                                $desc = $original_filename;
-                            }
+                            $desc = mb_strlen($original_filename, 'UTF-8') > 25 ? mb_substr($original_filename, 0, 25, 'UTF-8').'...' : $original_filename;
                         } elseif ($share['type'] === 'text') {
-                            $desc = isset($share['text']) ? mb_substr($share['text'], 0, 10, 'UTF-8') : '无内容';
+                            $desc = isset($share['text']) ? mb_substr($share['text'], 0, 20, 'UTF-8').'...' : '无内容';
                         } else {
                             $desc = '未知类型';
                         }
-                        echo "<li><div class=\"task-list-inline\"><strong>任务号:</strong> {$share_id} &nbsp; <strong>内容:</strong> " . htmlspecialchars($desc);
-                        // 复制按钮
-                        $copyValue = $share['type'] === 'file' ? ($share['filename'] ? $share['filename'] : '未知文件') : (isset($share['text']) ? $share['text'] : '无内容');
-                        echo '<button type="button" class="copy-btn task-list-btn" data-copy="' . htmlspecialchars($copyValue) . '">复制</button>';
-                        echo '<form action="share_handler.php?action=delete" method="post" style="display:inline;margin:0;">
+                        
+                        echo "<li><div class="task-list-inline"><strong>任务号:</strong> {$share_id} &nbsp; <strong>内容:</strong> " . htmlspecialchars($desc);
+
+                        // --- DYNAMIC BUTTONS ---
+                        if ($share['type'] === 'file') {
+                            // FILE: Show a mini download form
+                            echo '<form action="share_handler.php?action=download" method="post" class="task-list-inline-form">';
+                            echo '<input type="hidden" name="share_id" value="' . htmlspecialchars($share_id) . '">';
+                            if (!empty($share['password_hash'])) {
+                                echo '<input type="password" name="access_password" placeholder="密码" class="task-list-pwd">';
+                            }
+                            echo '<button type="submit" class="task-list-btn">下载</button>';
+                            echo '</form>';
+                        } else {
+                            // TEXT: Show copy button
+                            $copyValue = isset($share['text']) ? $share['text'] : '';
+                            echo '<button type="button" class="copy-btn task-list-btn" data-copy="' . htmlspecialchars($copyValue) . '">复制</button>';
+                        }
+
+                        // DELETE button is always present
+                        echo '<form action="share_handler.php?action=delete" method="post" class="task-list-inline-form">
                             <input type="hidden" name="share_id" value="' . htmlspecialchars($share_id) . '">
-                            <button type="submit" class="task-list-btn" onclick=\"return confirm(\'确定要删除该任务吗？\');\">删除</button>';
+                            <button type="submit" class="task-list-btn" onclick="return confirm('确定要删除该任务吗？');">删除</button>';
                         echo '</form>';
                         echo '</div></li>';
                     }
@@ -199,7 +220,7 @@ if (isset($_POST['admin_password'])) {
 <?php endif; ?>
 
         <div class="section" id="download-section">
-            <h2>下载内容</h2>
+            <h2>通过ID下载</h2>
             <form action="share_handler.php?action=download" method="post">
                 <div class="form-group">
                     <label for="share_id">分享ID:</label>
@@ -212,46 +233,9 @@ if (isset($_POST['admin_password'])) {
                 <button type="submit">获取内容</button>
             </form>
         </div>
-
-        <!-- Display messages from handler -->
-        <?php 
-        if (isset($_GET['message'])) {
-            $message = htmlspecialchars($_GET['message']);
-            $status = isset($_GET['status']) ? $_GET['status'] : 'info'; // info, success, error
-            echo "<div class='message {$status}'>{$message}</div>";
-        }
-        // 新增：如果有文本内容参数，则显示文本内容
-        if (isset($_GET['text_content'])) {
-            $text_content = htmlspecialchars(urldecode($_GET['text_content']));
-            echo "<div class='message success'><strong>分享文本内容：</strong><br><pre style='white-space:pre-wrap;word-break:break-all;'>" . $text_content . "</pre></div>";
-        }
-        ?>
-
     </div>
 
     <script>
-        function toggleUploadFields() {
-            const uploadType = document.getElementById('upload_type').value;
-            const textGroup = document.getElementById('text_content_group');
-            const fileGroup = document.getElementById('file_content_group');
-            const textInput = document.getElementById('text_content');
-            const fileInput = document.getElementById('file_content');
-
-            if (uploadType === 'text') {
-                textGroup.style.display = 'block';
-                fileGroup.style.display = 'none';
-                textInput.required = true;
-                fileInput.required = false;
-            } else {
-                textGroup.style.display = 'none';
-                fileGroup.style.display = 'block';
-                textInput.required = false;
-                fileInput.required = true;
-            }
-        }
-        // Initial call to set the correct fields based on default selection
-        document.addEventListener('DOMContentLoaded', toggleUploadFields);
-
         // 复制按钮功能
         document.addEventListener('DOMContentLoaded', function() {
             document.querySelectorAll('.copy-btn').forEach(function(btn) {

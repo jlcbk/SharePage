@@ -1,6 +1,10 @@
 <?php
 // 初始化会话并设置安全参数
+// 检查是否为HTTPS连接
+$is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || $_SERVER['SERVER_PORT'] == 443;
+
 session_start([
+    'cookie_secure' => $is_https, // 只在HTTPS下启用secure cookie
     'cookie_httponly' => true,
     'use_strict_mode' => true
 ]);
@@ -80,7 +84,13 @@ if (!is_writable($upload_dir) || !is_writable($data_file)) {
 // --- Request Handling ---
 $action = $_GET['action'] ?? null;
 
+// 调试输出
+error_log('HANDLER DEBUG - Request method: ' . $_SERVER['REQUEST_METHOD']);
+error_log('HANDLER DEBUG - Action: ' . ($action ?? 'null'));
+error_log('HANDLER DEBUG - Session ID: ' . session_id());
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    error_log('HANDLER DEBUG - Processing POST request');
 
     if ($action === 'upload') {
         // --- Upload Logic ---
@@ -89,10 +99,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // A more robust method (like sessions) is recommended for production
         // $provided_token = $_POST['admin_auth_token'] ?? '';
         // if (!password_verify($admin_password_correct, $provided_token)) {
+
+        // 调试信息
+        error_log('UPLOAD DEBUG - Session ID: ' . session_id());
+        error_log('UPLOAD DEBUG - Session data: ' . print_r($_SESSION, true));
+        error_log('UPLOAD DEBUG - POST data keys: ' . implode(', ', array_keys($_POST)));
+
         if (!isset($_SESSION['isAdminAuthenticated']) || !$_SESSION['isAdminAuthenticated']) { // Session-based check
-            error_log('SESSION DEBUG: ' . print_r($_SESSION, true));
+            error_log('UPLOAD DEBUG - Authentication failed');
             redirect_with_message('Admin authentication failed or expired.');
         }
+
+        error_log('UPLOAD DEBUG - Authentication passed, proceeding with upload');
 
         // 2. Get Upload Data
         $download_password = $_POST['download_password'] ?? null;
@@ -138,44 +156,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($file_info['size'] === 0) {
                  redirect_with_message('Uploaded file is empty.');
             }
-            // 文件类型和大小验证
-            $allowed_types = [
-                // 镜像
-                'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml', 'image/bmp',
-                // 文档
-                'application/pdf', 'text/plain', 'text/csv', 'text/html',
-                'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .doc, .docx
-                'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xls, .xlsx
-                'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .ppt, .pptx
-                // 压缩文件
-                'application/zip', 'application/x-rar-compressed', 'application/x-7z-compressed',
-                // 音视频
-                'audio/mpeg', 'audio/wav', 'video/mp4', 'video/webm'
-            ];
+            // 文件大小验证（移除了文件类型限制，允许所有文件类型）
             $max_size = 100 * 1024 * 1024; // 100MB
 
-            // 简单的 MIME 类型检查
-            if (!in_array($file_info['type'], $allowed_types)) {
-                // 如果类型不在列表中，进行扩展名检查作为备用
-                $allowed_extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'pdf', 'txt', 'csv', 'html', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'zip', 'rar', '7z', 'mp3', 'wav', 'mp4', 'webm'];
-                $file_extension = strtolower(pathinfo($file_info['name'], PATHINFO_EXTENSION));
-                if (!in_array($file_extension, $allowed_extensions)) {
-                    redirect_with_message('不被允许的文件类型。');
-                }
-            }
+            // 注意：已移除文件类型和扩展名限制，允许上传所有类型的文件
 
             if ($file_info['size'] > $max_size) {
                 redirect_with_message('文件大小超过 100MB 限制。');
             }
 
             $original_filename = basename($file_info['name']);
-            $safe_filename = $share_id . '_' . preg_replace('/[^A-Za-z0-9_\-\.]/', '_', $original_filename);
+
+            // 安全处理：对于可执行文件，添加.txt后缀防止执行
+            $file_extension = strtolower(pathinfo($original_filename, PATHINFO_EXTENSION));
+            $dangerous_extensions = ['php', 'php3', 'php4', 'php5', 'phtml', 'asp', 'aspx', 'jsp', 'js', 'vbs', 'pl', 'py', 'rb', 'sh', 'bat', 'cmd', 'exe', 'com', 'scr'];
+
+            if (in_array($file_extension, $dangerous_extensions)) {
+                $safe_filename = $share_id . '_' . preg_replace('/[^A-Za-z0-9_\-\.]/', '_', $original_filename) . '.txt';
+            } else {
+                $safe_filename = $share_id . '_' . preg_replace('/[^A-Za-z0-9_\-\.]/', '_', $original_filename);
+            }
+
             $destination = $upload_dir . $safe_filename;
 
+            error_log('UPLOAD DEBUG - Attempting to move file from ' . $file_info['tmp_name'] . ' to ' . $destination);
+
             if (move_uploaded_file($file_info['tmp_name'], $destination)) {
+                error_log('UPLOAD DEBUG - File moved successfully');
                 $new_share['filename'] = $original_filename;
                 $new_share['filepath'] = $destination;
             } else {
+                error_log('UPLOAD DEBUG - Failed to move uploaded file');
                 redirect_with_message('Failed to move uploaded file.');
             }
         } else {
@@ -183,10 +194,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         // 4. Save Share Data
+        error_log('UPLOAD DEBUG - Saving share data for ID: ' . $share_id);
         $share_data[$share_id] = $new_share;
+
+        error_log('UPLOAD DEBUG - Attempting to save data to file');
         if (save_share_data($share_data)) {
+            error_log('UPLOAD DEBUG - Data saved successfully, redirecting');
             redirect_with_message('Content uploaded successfully! Share ID: ' . $share_id, 'success');
         } else {
+            error_log('UPLOAD DEBUG - Failed to save data');
             // Clean up uploaded file if saving data failed
             if ($upload_type === 'file' && isset($destination) && file_exists($destination)) {
                 unlink($destination);

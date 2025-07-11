@@ -1,25 +1,42 @@
 <?php
 // 初始化会话并设置安全参数
+// 检查是否为HTTPS连接
+$is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || $_SERVER['SERVER_PORT'] == 443;
+
 session_start([
-    'cookie_secure' => true,
+    'cookie_secure' => $is_https, // 只在HTTPS下启用secure cookie
     'cookie_httponly' => true,
     'use_strict_mode' => true
-]); 
+]);
 
 // Placeholder for admin upload password check - replace with actual check
 $isAdminAuthenticated = false; // Assume not authenticated initially
 $admin_password_correct = '00000000'; // Replace with your desired admin password
 $session_timeout = 1800; // 30分钟
 
+// 首先检查session状态
+if (isset($_SESSION['isAdminAuthenticated']) && $_SESSION['isAdminAuthenticated']) {
+    $isAdminAuthenticated = true;
+}
+
+// 处理登录POST请求
 if (isset($_POST['admin_password'])) {
     if ($_POST['admin_password'] === $admin_password_correct) {
         $_SESSION['isAdminAuthenticated'] = true;
+        $isAdminAuthenticated = true;
         // PRG Pattern: Redirect after successful POST to prevent race conditions and form resubmission.
         header('Location: share_page.php?login=success');
         exit;
     }
-} else if (isset($_SESSION['isAdminAuthenticated']) && $_SESSION['isAdminAuthenticated']) {
-    $isAdminAuthenticated = true;
+}
+
+// 调试信息（临时添加，生产环境请删除）
+$debug_info = '';
+if (isset($_GET['debug'])) {
+    $debug_info = "Session ID: " . session_id() . "<br>";
+    $debug_info .= "Session Auth: " . (isset($_SESSION['isAdminAuthenticated']) ? ($_SESSION['isAdminAuthenticated'] ? 'true' : 'false') : 'not set') . "<br>";
+    $debug_info .= "isAdminAuthenticated: " . ($isAdminAuthenticated ? 'true' : 'false') . "<br>";
+    $debug_info .= "HTTPS: " . ($is_https ? 'true' : 'false') . "<br>";
 }
 
 ?>
@@ -134,6 +151,11 @@ if (isset($_POST['admin_password'])) {
         if (isset($_GET['text_content'])) {
             $text_content = htmlspecialchars(urldecode($_GET['text_content']));
             echo "<div class='message success'><strong>分享文本内容：</strong><br><pre style='white-space:pre-wrap;word-break:break-all;'>" . $text_content . "</pre></div>";
+        }
+
+        // 调试信息显示（临时添加）
+        if (!empty($debug_info)) {
+            echo "<div class='message info'><strong>调试信息：</strong><br>" . $debug_info . "</div>";
         }
         ?>
 
